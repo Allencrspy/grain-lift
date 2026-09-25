@@ -573,7 +573,7 @@ function loadFile(f) {
     src = document.createElement('canvas'); src.width = Math.round(img.width * k); src.height = Math.round(img.height * k);
     src.getContext('2d').drawImage(img, 0, 0, src.width, src.height);
     URL.revokeObjectURL(url);
-    isRepeat = detectRepeat(src); $('rep').checked = isRepeat;
+    isRepeat = detectRepeat(src); $('rep').checked = isRepeat; usePeriod = true;
     if (isRepeat) {
       sel = { x: 0, y: 0, w: src.width, h: src.height };
       $('srcinfo').textContent = `${f.name} is a repeat tile, so the whole tile is used exactly as it is. Untick "Already a repeat tile" to frame part of it instead.`;
@@ -748,6 +748,10 @@ function buildGrain(tile) { const o = new Float32Array(N * N); for (let i = 0; i
 // A tile made in Photoshop's Pattern Preview already repeats: use it exactly as it is.
 let isRepeat = false;
 let periodic = false;   // a photo of a regular print, rebuilt from its exact repeats
+let usePeriod = true, foundRepeat = false;
+document.addEventListener('click', e => {
+  if (e.target.id === 'repoff' || e.target.id === 'repon') { usePeriod = e.target.id === 'repon'; markPending('frame'); createBrush(); }
+});
 const makeTile = a => isRepeat || periodic ? Float32Array.from(a) : tileable(a);
 
 // ---------- regular prints (plaids, checks, stripes): find the repeat, like Photoshop's Pattern Preview ----------
@@ -775,11 +779,21 @@ function findPeriods(data) {
     }
     if (!dips.length) return null;
     const best = dips.reduce((a, b) => D[b] < D[a] ? b : a);
-    const d0 = dips.find(d => D[d] < 1.3 * D[best] + 0.003);      // the smallest repeat, not a multiple of it
+    // Tartans half-match themselves partway through (the white lines line up again, say). A smaller repeat
+    // only counts if it matches as well as the best one and fits into it a whole number of times.
+    const d0 = dips.find(d => { const k = best / d; return D[d] < 1.1 * D[best] + 0.002 && Math.abs(k - Math.round(k)) < 0.04; }) || best;
     const a = D[d0-1], b = D[d0], c = D[d0+1], den = a - 2 * b + c;
     return (d0 + (den > 0 ? 0.5 * (a - c) / den : 0)) * f;       // sub-pixel, in working pixels
   };
-  return { px: axis(true), py: axis(false) };
+  const shiftDiff = (dx, dy) => {
+    let s = 0, c = 0; const ix = Math.round(dx / f), iy = Math.round(dy / f);
+    for (let y = 0; y + iy < M; y += 2) for (let x = 0; x + ix < M; x += 2) { s += Math.abs(L[y*M+x] - L[(y+iy)*M+x+ix]); c++; }
+    return c ? s / c : Infinity;
+  };
+  let px = axis(true), py = axis(false);
+  if (px && !(shiftDiff(px, 0) < 0.5 * shiftDiff(px / 2, 0))) px = null;
+  if (py && !(shiftDiff(0, py) < 0.5 * shiftDiff(0, py / 2))) py = null;
+  return { px, py };
 }
 // Build a square tile from whole repeats by reading the swatch modulo the repeat, so the edges meet exactly.
 function periodicTile(data, px, py) {
@@ -868,16 +882,22 @@ let lastData = null, analysed = null, sheen = 0, tileRaw = null;
 function process(full) {
   if (!sel || sel.w < 2) return;
   lastData = crop();
-  periodic = false; $('repinfo').textContent = '';
+  periodic = false; $('repinfo').innerHTML = ''; foundRepeat = false;
   if (!isRepeat) {
     const { px, py } = findPeriods(lastData);
     if (px || py) {
-      lastData = periodicTile(lastData, px, py);
-      periodic = !!(px && py);
+      foundRepeat = true;
       const k = sel.w / N, sz = v => Math.round(v * k) + ' px';
-      $('repinfo').textContent = px && py
-        ? `Found the repeat: ${sz(px)} × ${sz(py)} in your photo. The fill is built from whole repeats, so it has no seams.`
-        : `Found a stripe repeat of ${sz(px || py)}. The fill is built from whole repeats in that direction.`;
+      if (usePeriod) {
+        lastData = periodicTile(lastData, px, py);
+        periodic = !!(px && py);
+        $('repinfo').innerHTML = (px && py
+          ? `Found the repeat: ${sz(px)} × ${sz(py)} in your photo. The fill is built from whole repeats, so it has no seams.`
+          : `Found a stripe repeat of ${sz(px || py)}. The fill is built from whole repeats in that direction.`)
+          + ` <button type="button" class="link" id="repoff">Pattern looks wrong? Don't use the repeat</button>`;
+      } else {
+        $('repinfo').innerHTML = `Using your frame as it is, with blended edges. <button type="button" class="link" id="repon">Use the found repeat</button>`;
+      }
     }
   }
   rebuild(full);
@@ -893,7 +913,7 @@ function rebuild(fromNewSelection) {
   ink = analysed.I;
   metrics = measure(ink);
   auto = autoParams(metrics);
-  if (fromNewSelection) { applyAuto(); fillType = !isRepeat && !periodic && !$('repinfo').textContent && looksSolid() ? 'solid' : 'print'; setSeg('ftype', fillType); buildFill(lastData); renderPalette(); drawFlat(); buildLayers(); }
+  if (fromNewSelection) { applyAuto(); fillType = !isRepeat && !foundRepeat && looksSolid() ? 'solid' : 'print'; setSeg('ftype', fillType); buildFill(lastData); renderPalette(); drawFlat(); buildLayers(); }
   tileRaw = makeTile(ink);
   grainArr = buildGrain(tileRaw); shapeArr = buildShape(ink);
   paintGray(grainArr, grainCanvas); paintGray(shapeArr, shapeCanvas);
