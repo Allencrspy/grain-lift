@@ -322,15 +322,24 @@ view.addEventListener('pointermove', e => {
   const p = toSrc(e), sq = $('sq').checked;
   if (drag.mode === 'move') { sel = { ...sel, x: clamp(p.x - drag.off.x, 0, src.width - sel.w), y: clamp(p.y - drag.off.y, 0, src.height - sel.h) }; }
   else { const s = normSel(drag.a, p, sq); if (s.w > 4 && s.h > 4) sel = s; }
-  drawView();
-  if (!raf) raf = requestAnimationFrame(() => { raf = 0; process(false); });
+  if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawView(); });
 });
-const endDrag = () => { if (drag) { drag = null; process(true); } };
+const endDrag = () => { if (!drag) return; drag = null; drawView(); buildSoon(); };
+// Building the brush takes a moment at full resolution, so show a note and let the page paint first.
+function buildSoon() {
+  setStatus('Reading the texture…'); $('srcinfo').dataset.busy = '1';
+  document.body.style.cursor = 'progress';
+  requestAnimationFrame(() => setTimeout(() => {
+    process(true);
+    document.body.style.cursor = ''; delete $('srcinfo').dataset.busy;
+    if ($('status').textContent === 'Reading the texture…') setStatus('');
+  }, 30));
+}
 view.addEventListener('pointerup', endDrag); view.addEventListener('pointercancel', endDrag);
 $('fullsel').onclick = () => {
   const sq = $('sq').checked, m = Math.min(src.width, src.height);
   sel = sq ? { x: (src.width - m) / 2, y: (src.height - m) / 2, w: m, h: m } : { x: 0, y: 0, w: src.width, h: src.height };
-  drawView(); process(true);
+  drawView(); buildSoon();
 };
 
 function loadFile(f) {
@@ -737,8 +746,16 @@ const fmt = { 'p-size': v => v + 'px', 'p-spacing': v => Math.round(v * 100) + '
 function syncOutputs() {
   document.querySelectorAll('input[type=range]').forEach(i => { const o = $(i.id + '-o'); if (o) o.textContent = fmt[i.id] ? fmt[i.id](i.value) : Math.round(i.value * 100) + '%'; });
 }
-['smooth', 'flat', 'con', 'den', 'soft', 'tex', 'tip', 'align'].forEach(id => $(id).addEventListener('input', () => { syncOutputs(); rebuild(false); }));
-document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', () => { syncOutputs(); updateBrushAssets(); }));
+// Source sliders rebuild the images, which is heavy: update the number while dragging, rebuild on release.
+['smooth', 'flat', 'con', 'den', 'soft', 'tex', 'tip', 'align'].forEach(id => {
+  $(id).addEventListener('input', syncOutputs);
+  $(id).addEventListener('change', () => { syncOutputs(); rebuild(false); });
+});
+let assetRaf = 0;
+document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', () => {
+  syncOutputs();
+  if (!assetRaf) assetRaf = requestAnimationFrame(() => { assetRaf = 0; updateBrushAssets(); });
+}));
 $('col').addEventListener('input', updateBrushAssets);
 function setSeg(id, v) { $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v == v)); if (id === 'move') moving = +v; if (id === 'pol') polarity = v; }
 function seg(id, fn) { $(id).querySelectorAll('button').forEach(b => b.onclick = () => { $(id).querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', o === b)); fn(b.dataset.v); }); }
@@ -755,7 +772,7 @@ seg('look', v => {
   } else if (analysed) { $('col').value = '#' + analysed.col.map(v => Math.round(v).toString(16).padStart(2, '0')).join(''); updateBrushAssets(); }
 });
 $('auto').onclick = () => { if (auto) { applyAuto(); rebuild(false); } };
-$('sq').addEventListener('change', () => { if ($('sq').checked && sel) { const m = Math.min(sel.w, sel.h); sel = { ...sel, w: m, h: m }; drawView(); process(true); } });
+$('sq').addEventListener('change', () => { if ($('sq').checked && sel) { const m = Math.min(sel.w, sel.h); sel = { ...sel, w: m, h: m }; drawView(); buildSoon(); } });
 
 // ---------- export: Procreate .brush (zip: Brush.archive + Shape.png + Grain.png + thumbnail) ----------
 class UID { constructor(v) { this.v = v; } }
