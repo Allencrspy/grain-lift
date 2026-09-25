@@ -114,6 +114,10 @@ input[type=text],select{font:15px var(--sans);padding:10px 12px;border-radius:10
 /* fine-tune drawer; the preview strip stays in view while the sliders scroll */
 .tune-preview{position:sticky;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:5;display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;gap:10px;background:var(--surface);padding-block:4px 14px;margin-bottom:6px;border-bottom:1px solid var(--line)}
 .tune-preview canvas{display:block;width:100%;height:84px;border-radius:8px}
+.tune-preview #create2{grid-column:1/-1;justify-self:start}
+.create{display:flex;flex-direction:column;gap:6px}
+button.big.done{background:transparent;color:var(--muted);border-color:var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
 #mirror{border:1px solid var(--line)}
 #mShape,#mGrain{background:#000}
 @media (max-width:560px){.tune-preview{grid-template-columns:minmax(0,1fr) 64px}.tune-preview canvas{height:64px}#mGrain{display:none}}
@@ -189,6 +193,11 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
         <button type="button" data-v="shine" aria-pressed="false"><em>Sheen</em><span>Paints highlights. Satin, silk, leather. Use it on an Add layer.</span></button>
       </div>
 
+      <div class="create">
+        <button class="primary big" id="create" type="button">Create brush</button>
+        <p class="hint" id="pendnote" style="margin:0"></p>
+      </div>
+
       <div class="pad" id="padwrap"><canvas id="pad" aria-label="Test pad. Draw here with Apple Pencil or a finger."></canvas><span class="tag">Try it here</span></div>
       <div class="padbar">
         <label class="colour" for="col"><input id="col" type="color" value="#2d3f66"> Test colour</label>
@@ -223,6 +232,7 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
       <canvas id="mirror" aria-label="Test stroke preview"></canvas>
       <canvas id="mShape" width="128" height="128" aria-label="Brush tip"></canvas>
       <canvas id="mGrain" width="128" height="128" aria-label="Texture"></canvas>
+      <button class="primary" id="create2" type="button" hidden>Update brush</button>
     </div>
     <div class="tune-body">
       <div class="group">
@@ -412,22 +422,41 @@ view.addEventListener('pointermove', e => {
   else { const s = normSel(drag.a, p, sq); if (s.w > 4 && s.h > 4) sel = s; }
   if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawView(); });
 });
-const endDrag = () => { if (!drag) return; drag = null; drawView(); buildSoon(); stepAtLeast(3); };
-// Building the brush takes a moment at full resolution, so show a note and let the page paint first.
-function buildSoon() {
-  setStatus('Reading the texture…'); $('srcinfo').dataset.busy = '1';
-  document.body.style.cursor = 'progress';
+const endDrag = () => { if (!drag) return; drag = null; drawView(); markPending('frame'); };
+
+// Building the brush is heavy at full resolution, so it only happens when asked for.
+// 'frame' = new swatch (re-read everything), 'tune' = same swatch, new settings.
+let pending = null, busy = false;
+function markPending(kind) {
+  pending = kind === 'frame' || pending === 'frame' ? 'frame' : 'tune';
+  showPending();
+}
+function showPending() {
+  const b = $('create');
+  b.disabled = busy;
+  b.classList.toggle('done', !pending && !busy);
+  b.textContent = busy ? 'Creating…' : pending ? (pending === 'frame' ? 'Create brush' : 'Update brush') : 'Brush is up to date';
+  $('pendnote').textContent = busy ? '' : pending === 'frame' ? 'You moved the frame. Tap Create brush to read the new swatch.'
+    : pending === 'tune' ? 'Settings changed. Tap Update brush to apply them.' : '';
+  $('create2').hidden = !pending || busy;
+  $('dl-brush').disabled = !!pending || busy;
+  ['dl-shape', 'dl-grain', 'dl-raw'].forEach(id => $(id).disabled = !!pending || busy);
+}
+function createBrush() {
+  if (busy || !pending) return;
+  busy = true; showPending();
+  // let the button repaint before the heavy work starts
   requestAnimationFrame(() => setTimeout(() => {
-    process(true);
-    document.body.style.cursor = ''; delete $('srcinfo').dataset.busy;
-    if ($('status').textContent === 'Reading the texture…') setStatus('');
+    try { pending === 'frame' ? process(true) : rebuild(false); pending = null; if (look === 'shine') updateBrushAssets(); stepAtLeast(3); }
+    catch (e) { setStatus('Could not create the brush: ' + e.message, 'err'); }
+    busy = false; showPending();
   }, 30));
 }
 view.addEventListener('pointerup', endDrag); view.addEventListener('pointercancel', endDrag);
 $('fullsel').onclick = () => {
   const sq = $('sq').checked, m = Math.min(src.width, src.height);
   sel = sq ? { x: (src.width - m) / 2, y: (src.height - m) / 2, w: m, h: m } : { x: 0, y: 0, w: src.width, h: src.height };
-  drawView(); buildSoon();
+  drawView(); markPending('frame');
 };
 
 function loadFile(f) {
@@ -443,7 +472,7 @@ function loadFile(f) {
     $('srcinfo').textContent = `${f.name}. Drag across the photo to frame a swatch, drag inside the frame to move it, or drag its corner to resize.`;
     const base = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 32);
     if (base) $('bname').value = base.replace(/\b\w/g, c => c.toUpperCase());
-    layoutView(); process(true); setStatus(''); stepTo(2);
+    layoutView(); setStatus(''); stepTo(2); pending = 'frame'; createBrush();
   };
   img.onerror = () => setStatus('This browser could not decode that image. Export it as JPG or PNG and try again.', 'err');
   img.src = url;
@@ -669,6 +698,7 @@ function rebuild(fromNewSelection) {
   tileRaw = tileable(ink);
   grainArr = buildGrain(tileRaw); shapeArr = buildShape(ink);
   paintGray(grainArr, grainCanvas); paintGray(shapeArr, shapeCanvas);
+  shapeSmall = shrink(shapeCanvas, 128); grainSmall = shrink(grainCanvas, 256);
   // previews
   const sx = $('shapeC').getContext('2d'); sx.imageSmoothingQuality = 'high'; sx.drawImage(shapeCanvas, 0, 0, 256, 256);
   const gx = $('grainC').getContext('2d'); gx.imageSmoothingQuality = 'high';
@@ -711,12 +741,21 @@ const P = () => ({
   stream: +$('p-stream').value, tstart: +$('p-tstart').value, tend: +$('p-tend').value, tsize: +$('p-tsize').value
 });
 function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function shrink(canvas, size) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high'; x.drawImage(canvas, 0, 0, size, size);
+  const d = x.getImageData(0, 0, size, size).data, a = new Float32Array(size * size);
+  for (let i = 0; i < a.length; i++) a[i] = d[i * 4] / 255;
+  a.n = size; return a;
+}
+let shapeSmall = null, grainSmall = null;
 function alphaCanvas(arr, size, rgb, fn = v => v) {
-  const c = document.createElement('canvas'); c.width = c.height = N;
-  const x = c.getContext('2d'), id = x.createImageData(N, N);
-  for (let i = 0; i < N * N; i++) { id.data[i*4] = rgb[0]; id.data[i*4+1] = rgb[1]; id.data[i*4+2] = rgb[2]; id.data[i*4+3] = fn(arr[i]) * 255; }
+  const n = arr.n || N;
+  const c = document.createElement('canvas'); c.width = c.height = n;
+  const x = c.getContext('2d'), id = x.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) { id.data[i*4] = rgb[0]; id.data[i*4+1] = rgb[1]; id.data[i*4+2] = rgb[2]; id.data[i*4+3] = fn(arr[i]) * 255; }
   x.putImageData(id, 0, 0);
-  if (size === N) return c;
+  if (size === n) return c;
   const o = document.createElement('canvas'); o.width = o.height = size;
   const ox = o.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, 0, 0, size, size);
   return o;
@@ -724,9 +763,9 @@ function alphaCanvas(arr, size, rgb, fn = v => v) {
 function updateBrushAssets() {
   if (!shapeArr) return;
   const p = P(), rgb = hexToRgb($('col').value);
-  tipCanvas = alphaCanvas(shapeArr, 128, rgb);
+  tipCanvas = alphaCanvas(shapeSmall, 128, rgb);
   const tile = Math.round(48 + p.gscale * 460);
-  grainTile = alphaCanvas(grainArr, tile, [0, 0, 0], v => 1 - p.depth * (1 - v));
+  grainTile = alphaCanvas(grainSmall, tile, [0, 0, 0], v => 1 - p.depth * (1 - v));
   // textured tips for "moving" grain: tip × random crops of the grain
   texTips = [];
   const r = rng(11);
@@ -850,11 +889,11 @@ const fmt = { 'p-size': v => v + 'px', 'p-spacing': v => Math.round(v * 100) + '
 function syncOutputs() {
   document.querySelectorAll('input[type=range]').forEach(i => { const o = $(i.id + '-o'); if (o) o.textContent = fmt[i.id] ? fmt[i.id](i.value) : Math.round(i.value * 100) + '%'; });
 }
-// Source sliders rebuild the images, which is heavy: update the number while dragging, rebuild on release.
+// Source settings change the tip and texture images: note it, and rebuild when Update brush is tapped.
 ['smooth', 'flat', 'con', 'den', 'soft', 'tex', 'tip', 'align'].forEach(id => {
-  $(id).addEventListener('input', syncOutputs);
-  $(id).addEventListener('change', () => { syncOutputs(); rebuild(false); });
+  $(id).addEventListener('input', () => { syncOutputs(); markPending('tune'); });
 });
+$('create').onclick = createBrush; $('create2').onclick = createBrush;
 $('tune').addEventListener('toggle', () => { if ($('tune').open) mirrorPad(); });
 let assetRaf = 0;
 document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', () => {
@@ -864,7 +903,7 @@ document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', (
 $('col').addEventListener('input', updateBrushAssets);
 function setSeg(id, v) { $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v == v)); if (id === 'move') moving = +v; if (id === 'pol') polarity = v; }
 function seg(id, fn) { $(id).querySelectorAll('button').forEach(b => b.onclick = () => { $(id).querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', o === b)); fn(b.dataset.v); }); }
-seg('pol', v => { polarity = v; rebuild(false); });
+seg('pol', v => { polarity = v; markPending('tune'); });
 seg('move', v => { moving = +v; updateBrushAssets(); });
 seg('look', v => {
   look = v; stepAtLeast(4);
@@ -873,11 +912,17 @@ seg('look', v => {
     $('p-flow').value = 0.12;   // highlights build up gently, so repeated strokes brighten the sheen
     // highlights lay down the paint: light marks, sparse and bright
     polarity = 'light'; setSeg('pol', 'light');
-    $('den').value = -0.5; $('con').value = 1.7; syncOutputs(); rebuild(false);
-  } else if (analysed) { $('col').value = '#' + analysed.fab.map(v => Math.round(v).toString(16).padStart(2, '0')).join(''); updateBrushAssets(); }
+    $('den').value = -0.5; $('con').value = 1.7; syncOutputs(); markPending('tune');
+  } else if (analysed) {
+    // back to matte: paint follows the fabric again
+    polarity = 'auto'; setSeg('pol', 'auto'); $('den').value = 0; $('con').value = 1.3;
+    if (auto) $('p-flow').value = auto.flow;
+    $('col').value = '#' + analysed.fab.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    syncOutputs(); markPending('tune');
+  }
 });
-$('auto').onclick = () => { if (auto) { applyAuto(); rebuild(false); } };
-$('sq').addEventListener('change', () => { if ($('sq').checked && sel) { const m = Math.min(sel.w, sel.h); sel = { ...sel, w: m, h: m }; drawView(); buildSoon(); } });
+$('auto').onclick = () => { if (auto) { applyAuto(); updateBrushAssets(); markPending('tune'); } };
+$('sq').addEventListener('change', () => { if ($('sq').checked && sel) { const m = Math.min(sel.w, sel.h); sel = { ...sel, w: m, h: m }; drawView(); markPending('frame'); } });
 
 // ---------- export: Procreate .brush (zip: Brush.archive + Shape.png + Grain.png + thumbnail) ----------
 class UID { constructor(v) { this.v = v; } }
@@ -974,7 +1019,7 @@ function thumbnail() {
   for (let i = 0; i <= 120; i++) { const t = i / 120; pts.push({ x: 60 + t * (w - 120), y: h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p: Math.sin(Math.PI * t) ** 0.7 }); }
   const savedW = pad.width, savedH = pad.height; // renderStroke sizes its layer from the pad
   pad.width = w; pad.height = h;
-  const tip = tipCanvas; tipCanvas = alphaCanvas(shapeArr, 128, [0, 0, 0]);
+  const tip = tipCanvas; tipCanvas = alphaCanvas(shapeSmall, 128, [0, 0, 0]);
   renderStroke(x, { pts, seed: 3 }, { ...p, size: 70 }, 1);
   tipCanvas = tip; pad.width = savedW; pad.height = savedH; redraw();
   return new Promise(r => c.toBlob(r, 'image/png'));
@@ -1034,6 +1079,7 @@ stepTo(2);
 layoutView(); pink();
 sizePad();
 process(true);
+showPending();
 let rt = 0;
 const relayout = () => { clearTimeout(rt); rt = setTimeout(() => { layoutView(); sizePad(); pink(); }, 120); };
 window.addEventListener('resize', relayout);
