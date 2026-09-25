@@ -111,7 +111,12 @@ input[type=text],select{font:15px var(--sans);padding:10px 12px;border-radius:10
 .note{font-size:13px;color:var(--muted);margin:0}
 .note b{color:var(--ink);font-weight:600}
 
-/* fine-tune drawer */
+/* fine-tune drawer; the preview strip stays in view while the sliders scroll */
+.tune-preview{position:sticky;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:5;display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;gap:10px;background:var(--surface);padding-block:4px 14px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.tune-preview canvas{display:block;width:100%;height:84px;border-radius:8px}
+#mirror{border:1px solid var(--line)}
+#mShape,#mGrain{background:#000}
+@media (max-width:560px){.tune-preview{grid-template-columns:minmax(0,1fr) 64px}.tune-preview canvas{height:64px}#mGrain{display:none}}
 details.tune{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:0 18px}
 details.tune summary{cursor:pointer;list-style:none;padding:16px 0;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 details.tune summary::-webkit-details-marker{display:none}
@@ -214,6 +219,11 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
 
   <details class="tune" id="tune">
     <summary><h2>Fine-tune</h2><span class="hint">Everything is set from your photo. Adjust only if you want to.</span></summary>
+    <div class="tune-preview" aria-label="Live preview">
+      <canvas id="mirror" aria-label="Test stroke preview"></canvas>
+      <canvas id="mShape" width="128" height="128" aria-label="Brush tip"></canvas>
+      <canvas id="mGrain" width="128" height="128" aria-label="Texture"></canvas>
+    </div>
     <div class="tune-body">
       <div class="group">
         <h3>Swatch</h3>
@@ -663,6 +673,8 @@ function rebuild(fromNewSelection) {
   const sx = $('shapeC').getContext('2d'); sx.imageSmoothingQuality = 'high'; sx.drawImage(shapeCanvas, 0, 0, 256, 256);
   const gx = $('grainC').getContext('2d'); gx.imageSmoothingQuality = 'high';
   for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) gx.drawImage(grainCanvas, i * 128, j * 128, 128, 128);
+  const ms = $('mShape').getContext('2d'); ms.imageSmoothingQuality = 'high'; ms.drawImage(shapeCanvas, 0, 0, 128, 128);
+  const mg = $('mGrain').getContext('2d'); mg.drawImage($('grainC'), 0, 0, 128, 128);
   renderReadout();
   updateBrushAssets();
 }
@@ -788,6 +800,17 @@ function renderStroke(ctx, s, p, dpr) {
   }
   ctx.drawImage(layer, 0, 0);
 }
+function mirrorPad() {
+  const m = $('mirror'); if (!m || !m.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1, w = Math.round(m.clientWidth * dpr), h = Math.round(m.clientHeight * dpr);
+  if (m.width !== w || m.height !== h) { m.width = w; m.height = h; }
+  const x = m.getContext('2d');
+  x.fillStyle = look === 'shine' ? baseColour() : '#F4F3EF'; x.fillRect(0, 0, w, h);
+  // fit the whole test pad into the strip, centred
+  const sy = pad.height * 0.15, sh = pad.height * 0.7;   // the band the strokes live in
+  const k = Math.min(w / pad.width, h / sh), dw = pad.width * k, dh = sh * k;
+  x.imageSmoothingQuality = 'high'; x.drawImage(pad, 0, sy, pad.width, sh, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
 function redraw() {
   if (!tipCanvas || !pad.width) return;
   const dpr = window.devicePixelRatio || 1, p = P();
@@ -801,6 +824,7 @@ function redraw() {
   for (const s of all) renderStroke(pctx, s, p, dpr);
   if (cur) renderStroke(pctx, cur, p, dpr);
   pctx.globalCompositeOperation = 'source-over';
+  mirrorPad();
 }
 let padRaf = 0;
 function padPt(e) { const r = pad.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pointerType === 'pen' ? clamp(e.pressure || 0.5) : e.pointerType === 'touch' ? 0.8 : 0.75 }; }
@@ -831,6 +855,7 @@ function syncOutputs() {
   $(id).addEventListener('input', syncOutputs);
   $(id).addEventListener('change', () => { syncOutputs(); rebuild(false); });
 });
+$('tune').addEventListener('toggle', () => { if ($('tune').open) mirrorPad(); });
 let assetRaf = 0;
 document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', () => {
   syncOutputs();
