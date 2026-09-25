@@ -121,6 +121,18 @@ input[type=text],select{font:15px var(--sans);padding:10px 12px;border-radius:10
 .ready-actions{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 a.btn.big{font-size:16px;padding:14px 22px;width:100%;min-height:52px;text-decoration:none}
 .ready-card .link{align-self:center}
+.ready-list{display:flex;flex-direction:column;gap:8px}
+.ready-list a.small{font-size:14px;min-height:40px;padding:8px 14px;width:100%;text-decoration:none;justify-content:space-between}
+
+/* fabric brush set */
+.layers{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.layers li{display:grid;grid-template-columns:auto 52px minmax(0,1fr);gap:12px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:12px}
+.layers .n{font:500 13px var(--mono);color:var(--muted);width:1.4em;text-align:center}
+.layers canvas{width:52px;height:52px;border-radius:8px;background:#fff;border:1px solid var(--line)}
+.layers b{display:block;font-weight:600}
+.layers span.hex{font:500 12px var(--mono);color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.layers span.hex i{width:14px;height:14px;border-radius:50%;border:1px solid var(--line);display:inline-block}
+#fpad{background:#fff}
 
 /* fabric kit */
 .kit{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:14px}
@@ -243,10 +255,30 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
     </section>
   </div>
 
+  <section class="card" aria-labelledby="h-fb">
+    <div class="head">
+      <div><span class="step">Step 4</span><h2 id="h-fb">Fabric brushes</h2></div>
+    </div>
+    <p class="note" style="max-width:70ch">A Procreate brush paints one colour at a time, so your fabric comes as a small set, one brush per colour. Paint an area with each brush in order, each in its own colour, and the fabric builds up. The pattern is fixed to the canvas, so the colours line up.</p>
+    <div class="brush-grid">
+      <div class="brush-col">
+        <div class="pad" id="fpadwrap"><canvas id="fpad" aria-label="Test pad. Paint with the whole fabric set."></canvas><span class="tag">Paint with the fabric</span></div>
+        <div class="padbar"><span class="hint">All the brushes painted together</span><button id="fclear" type="button" class="link">Clear pad</button></div>
+      </div>
+      <div class="brush-col">
+        <ol class="layers" id="layers" aria-label="Brushes in the set, in painting order"></ol>
+        <div class="field"><label for="fname">Fabric name</label><input id="fname" type="text" value="Denim Twill" maxlength="32"></div>
+        <button class="primary big" id="dl-fabric" type="button">Save fabric brushes to Procreate</button>
+        <div class="status" id="fstatus" role="status"></div>
+        <p class="note">In Procreate, paint with brush 1 in its colour, then brush 2 in its colour over the same area, and so on. Keep each brush's <b>Grain → Scale</b> the same so the layers stay lined up.</p>
+      </div>
+    </div>
+  </section>
+
   <section class="card" aria-labelledby="h-brush">
     <div class="head">
-      <div><span class="step">Step 4</span><h2 id="h-brush">Texture brush</h2></div>
-      <span class="hint">One colour at a time, for weave, shading and sheen on top of the fill</span>
+      <div><span class="step">Extra</span><h2 id="h-brush">Shading and sheen brush</h2></div>
+      <span class="hint">One colour at a time, for folds, shading and satin sheen on top of the fabric</span>
     </div>
     <div class="brush-grid">
       <div class="brush-col">
@@ -289,7 +321,7 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
       <p class="hint" id="ready-hint" style="margin:0"></p>
       <div class="ready-actions">
         <button class="primary big" id="ready-share" type="button">Open in Procreate</button>
-        <a class="btn big" id="ready-dl" href="#">Save to Files</a>
+        <div class="ready-list" id="ready-list"></div>
       </div>
       <button class="link" id="ready-close" type="button">Close</button>
     </div>
@@ -321,7 +353,7 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
       <div class="group">
         <h3>Brush tip</h3>
         <div class="ctl"><label for="tip">Tip shape</label>
-          <select id="tip"><option value="round">Round</option><option value="stamp">Whole swatch</option></select></div>
+          <select id="tip"><option value="stamp" selected>Whole swatch</option><option value="round">Round</option></select></div>
         <div class="ctl"><label for="soft">Edge softness <output id="soft-o"></output></label><input id="soft" type="range" min="0.02" max="0.9" step="0.01" value="0.4"></div>
         <div class="ctl"><label for="tex">Texture in tip <output id="tex-o"></output></label><input id="tex" type="range" min="0" max="1" step="0.01" value="0.7"></div>
         <label class="check" for="align"><input id="align" type="checkbox" checked> Turn stripes and ribs to follow the stroke</label>
@@ -509,7 +541,7 @@ function showPending() {
     : pending === 'tune' ? 'Settings changed. Tap Update fabric kit to apply them.' : '';
   $('create2').hidden = !pending || busy;
   $('dl-brush').disabled = !!pending || busy;
-  ['dl-shape', 'dl-grain', 'dl-raw', 'dl-fill', 'dl-pal'].forEach(id => $(id).disabled = !!pending || busy);
+  ['dl-shape', 'dl-grain', 'dl-raw', 'dl-fill', 'dl-pal', 'dl-fabric'].forEach(id => $(id).disabled = !!pending || busy);
 }
 function createBrush() {
   if (busy || !pending) return;
@@ -540,7 +572,7 @@ function loadFile(f) {
     sel = { x: (src.width - m) / 2, y: (src.height - m) / 2, w: m, h: m };
     $('srcinfo').textContent = `${f.name}. Drag across the photo to frame a swatch, drag inside the frame to move it, or drag its corner to resize.`;
     const base = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 32);
-    if (base) $('bname').value = base.replace(/\b\w/g, c => c.toUpperCase());
+    if (base) $('bname').value = $('fname').value = base.replace(/\b\w/g, c => c.toUpperCase()).slice(0, 32);
     layoutView(); setStatus(''); stepTo(2); pending = 'frame'; createBrush();
   };
   img.onerror = () => setStatus('This browser could not decode that image. Export it as JPG or PNG and try again.', 'err');
@@ -763,7 +795,7 @@ function rebuild(fromNewSelection) {
   ink = analysed.I;
   metrics = measure(ink);
   auto = autoParams(metrics);
-  if (fromNewSelection) { applyAuto(); fillType = looksSolid() ? 'solid' : 'print'; setSeg('ftype', fillType); buildFill(lastData); renderPalette(); drawFlat(); }
+  if (fromNewSelection) { applyAuto(); fillType = looksSolid() ? 'solid' : 'print'; setSeg('ftype', fillType); buildFill(lastData); renderPalette(); drawFlat(); buildLayers(); }
   tileRaw = tileable(ink);
   grainArr = buildGrain(tileRaw); shapeArr = buildShape(ink);
   paintGray(grainArr, grainCanvas); paintGray(shapeArr, shapeCanvas);
@@ -821,7 +853,7 @@ function buildSolidFill(data) {
   let rs = 0, gs = 0, bs = 0; for (let i = 0; i < n; i++) { rs += data[i*4]; gs += data[i*4+1]; bs += data[i*4+2]; }
   const avg = [rs / n, gs / n, bs / n];
   const d = new Float32Array(n); for (let i = 0; i < n; i++) d[i] = 0.5 + (L[i] - hp[i]);
-  const t = tileable(d);
+  const t = tileable(d); weaveT = t;
   const x = fillCanvas.getContext('2d'), id = x.createImageData(N, N);
   for (let i = 0; i < n; i++) { const f = 1 + 0.7 * (t[i] - 0.5) * 2; for (let c = 0; c < 3; c++) id.data[i*4+c] = clamp(avg[c] * f / 255) * 255; id.data[i*4+3] = 255; }
   x.putImageData(id, 0, 0);
@@ -844,6 +876,139 @@ function extractPalette(d) { // k-means on a sample of the fill, largest groups 
   for (const c of out) if (!kept.some(k => Math.hypot(...k.rgb.map((v, i) => v - c.rgb[i])) < 28)) kept.push(c);
   return kept.slice(0, 6);
 }
+// ---------- fabric brushes: the fill split into one grain per colour, like screen printing ----------
+let layers = [], weaveT = null;
+const reconCanvas = document.createElement('canvas'); reconCanvas.width = reconCanvas.height = N;
+function mergeColours(cols, dist) {
+  const out = [];
+  for (const c of cols) {
+    const m = out.find(o => Math.hypot(...o.rgb.map((v, i) => v - c.rgb[i])) < dist);
+    if (m) { const t = m.share + c.share; m.rgb = m.rgb.map((v, i) => (v * m.share + c.rgb[i] * c.share) / t); m.share = t; }
+    else out.push({ rgb: c.rgb.slice(), share: c.share });
+  }
+  return out.sort((a, b) => b.share - a.share);
+}
+function buildLayers() {
+  const n = N * N;
+  if (fillType === 'solid' && weaveT) {
+    // base colour, then the shadow tone painted into the weave's gaps
+    const base = palette[0].rgb, shade = palette[1] ? palette[1].rgb : base.map(v => v * 0.65);
+    const weave = new Float32Array(n); for (let i = 0; i < n; i++) weave[i] = clamp((0.5 - weaveT[i]) * 3.2);
+    layers = [{ label: 'Base colour', rgb: base, map: null }, { label: 'Weave', rgb: shade.map(Math.round), map: weave }];
+  } else {
+    const cols = mergeColours(palette, 60).slice(0, 5);   // colours closer than this paint as one
+    const d = fillCanvas.getContext('2d').getImageData(0, 0, N, N).data;
+    let minD = 1e9; for (let a = 0; a < cols.length; a++) for (let b = a + 1; b < cols.length; b++) minD = Math.min(minD, Math.hypot(...cols[a].rgb.map((v, i) => v - cols[b].rgb[i])));
+    const sig = clamp(minD * 0.35, 8, 30), k = cols.length;
+    const maps = cols.map(() => new Float32Array(n)), w = new Float32Array(k);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let j = 0; j < k; j++) { const c = cols[j].rgb, dd = (d[i*4]-c[0])**2 + (d[i*4+1]-c[1])**2 + (d[i*4+2]-c[2])**2; w[j] = Math.exp(-dd / (2 * sig * sig)) + 1e-9; sum += w[j]; }
+      for (let j = 0; j < k; j++) maps[j][i] = w[j] / sum;
+    }
+    layers = cols.map((c, j) => ({ label: j === 0 ? 'Base colour' : 'Colour ' + (j + 1), rgb: c.rgb.map(Math.round), map: j === 0 ? null : maps[j] }));
+  }
+  // what the set paints when each brush goes over the same area in order
+  const x = reconCanvas.getContext('2d'), id = x.createImageData(N, N), o = id.data;
+  for (let i = 0; i < n; i++) {
+    let r = layers[0].rgb[0], g = layers[0].rgb[1], b = layers[0].rgb[2];
+    for (let j = 1; j < layers.length; j++) { const a = layers[j].map[i], c = layers[j].rgb; r += (c[0] - r) * a; g += (c[1] - g) * a; b += (c[2] - b) * a; }
+    o[i*4] = r; o[i*4+1] = g; o[i*4+2] = b; o[i*4+3] = 255;
+  }
+  x.putImageData(id, 0, 0);
+  layers.forEach(l => { l.small = l.map ? shrinkArr(l.map, 128) : null; });
+  renderLayers(); drawFabricPad();
+}
+function shrinkArr(arr, size) { const c = document.createElement('canvas'); c.width = c.height = N; paintGray(arr, c); return shrink(c, size); }
+function layerCanvas(l, size, bg) { // the layer's grain, painted in its colour
+  const c = document.createElement('canvas'); c.width = c.height = size; const x = c.getContext('2d');
+  if (bg) { x.fillStyle = bg; x.fillRect(0, 0, size, size); }
+  if (!l.map) { x.fillStyle = hex(l.rgb); x.fillRect(0, 0, size, size); return c; }
+  x.drawImage(alphaCanvas(l.small, size, l.rgb), 0, 0); return c;
+}
+function renderLayers() {
+  $('layers').innerHTML = layers.map((l, j) => `<li><span class="n">${j + 1}</span><canvas width="104" height="104"></canvas><div><b>${l.label}</b><span class="hex"><i style="background:${hex(l.rgb)}"></i>${hex(l.rgb).toUpperCase()}</span></div></li>`).join('');
+  $('layers').querySelectorAll('canvas').forEach((c, j) => c.getContext('2d').drawImage(layerCanvas(layers[j], 104, '#fff'), 0, 0));
+}
+// test pad: round strokes that reveal the combined fabric, fixed to the pad like Procreate's texturized grain
+const fpad = $('fpad'); let fstrokes = [], fcur = null;
+function fabricTile() { const t = Math.max(12, +$('psize').value * 260); return t; }
+function drawFabricPad() {
+  if (!fpad.clientWidth || !layers.length) return;
+  const dpr = window.devicePixelRatio || 1, w = Math.round(fpad.clientWidth * dpr), h = Math.round(fpad.clientHeight * dpr);
+  if (fpad.width !== w || fpad.height !== h) { fpad.width = w; fpad.height = h; }
+  const x = fpad.getContext('2d');
+  x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, w, h);
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const all = fstrokes.length ? fstrokes : [demoFabricStroke()];
+  x.lineCap = x.lineJoin = 'round'; x.strokeStyle = '#000';
+  for (const s of all.concat(fcur ? [fcur] : [])) {
+    for (let i = 1; i < s.pts.length; i++) { const a = s.pts[i-1], b = s.pts[i]; x.lineWidth = 64 * (0.55 + 0.45 * b.p); x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.stroke(); }
+    if (s.pts.length === 1) { x.beginPath(); x.arc(s.pts[0].x, s.pts[0].y, 20, 0, 7); x.fill(); }
+  }
+  x.globalCompositeOperation = 'source-in';
+  const pat = x.createPattern(reconCanvas, 'repeat'); pat.setTransform(new DOMMatrix().scale(fabricTile() / N));
+  x.fillStyle = pat; x.fillRect(0, 0, w, h);
+  x.globalCompositeOperation = 'source-over';
+}
+function demoFabricStroke() {
+  const w = fpad.clientWidth, h = fpad.clientHeight, pts = [];
+  for (let i = 0; i <= 80; i++) { const t = i / 80; pts.push({ x: 50 + t * (w - 100), y: h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p: 1 }); }
+  const pts2 = pts.map(q => ({ x: q.x, y: q.y + 40, p: 1 }));
+  return { pts: pts.concat(pts2.reverse()) };
+}
+function fpt(e) { const r = fpad.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pointerType === 'pen' ? clamp(e.pressure || 0.5) : 1 }; }
+let fRaf = 0;
+fpad.addEventListener('pointerdown', e => { fpad.setPointerCapture(e.pointerId); fcur = { pts: [fpt(e)] }; drawFabricPad(); });
+fpad.addEventListener('pointermove', e => { if (!fcur) return; (e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).forEach(ev => fcur.pts.push(fpt(ev))); if (!fRaf) fRaf = requestAnimationFrame(() => { fRaf = 0; drawFabricPad(); }); });
+const fUp = () => { if (fcur) { fstrokes.push(fcur); fcur = null; drawFabricPad(); } };
+fpad.addEventListener('pointerup', fUp); fpad.addEventListener('pointercancel', fUp);
+$('fclear').onclick = () => { fstrokes = []; drawFabricPad(); };
+
+// brush files for the set: a hard round tip; the grain carries the pattern
+let roundTip = null;
+function roundTipCanvas() {
+  if (roundTip) return roundTip;
+  const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0, 0, 512, 512);
+  const g = x.createRadialGradient(256, 256, 0, 256, 256, 240); g.addColorStop(0, '#fff'); g.addColorStop(0.9, '#fff'); g.addColorStop(1, '#000');
+  x.fillStyle = g; x.beginPath(); x.arc(256, 256, 240, 0, 7); x.fill();
+  return (roundTip = c);
+}
+function layerThumb(l) {
+  const w = 1000, h = 250, c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.lineCap = 'round'; x.lineWidth = 110; x.beginPath();
+  for (let i = 0; i <= 60; i++) { const t = i / 60, px = 90 + t * (w - 180), py = h / 2 + Math.sin(t * Math.PI * 2) * 40; i ? x.lineTo(px, py) : x.moveTo(px, py); }
+  x.stroke(); x.globalCompositeOperation = 'source-in';
+  const pat = x.createPattern(layerCanvas(l, 256, null), 'repeat'); x.fillStyle = pat; x.fillRect(0, 0, w, h);
+  return new Promise(r => c.toBlob(r, 'image/png'));
+}
+const fabricName = () => ($('fname').value.trim() || 'Fabric').replace(/[\\/:*?"<>|]+/g, '').slice(0, 32);
+$('dl-fabric').onclick = async () => {
+  if (!layers.length || !window.JSZip) return;
+  const btn = $('dl-fabric'); btn.disabled = true; btn.textContent = 'Building brushes…'; $('fstatus').textContent = '';
+  try {
+    const set = { flow: 1, popac: 0, psize: 0.15, jitter: 0, stream: 0.2, spacing: 0.03, scatter: 0, follow: 0,
+      tstart: 0, tend: 0.02, tsize: 0.3, moving: 0, gscale: +$('psize').value, depth: 1 };   // texturized: the print stays put
+    const tip = await exportPng(roundTipCanvas(), 1024), items = [];
+    for (let j = 0; j < layers.length; j++) {
+      const l = layers[j], name = `${fabricName()} ${j + 1} ${hex(l.rgb).slice(1).toUpperCase()}`;
+      const g = document.createElement('canvas'); g.width = g.height = N;
+      if (l.map) paintGray(l.map, g); else { const gx = g.getContext('2d'); gx.fillStyle = '#fff'; gx.fillRect(0, 0, N, N); }
+      const zip = new JSZip();
+      zip.file('Brush.archive', brushArchive(name, set));
+      zip.file('Shape.png', tip, { compression: 'STORE' });
+      zip.file('Grain.png', await exportPng(g, EXPORT), { compression: 'STORE' });
+      zip.file('QuickLook/Thumbnail.png', await layerThumb(l), { compression: 'STORE' });
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/octet-stream' });
+      items.push({ name: name + (inArtifact ? '.brush.zip' : '.brush'), blob });
+    }
+    btn.textContent = 'Save fabric brushes to Procreate'; btn.disabled = false;
+    if (await saveMany(items)) { $('fstatus').textContent = `Saved ${items.length} brushes.`; $('fstatus').className = 'status ok'; stepTo(5); }
+  } catch (e) { $('fstatus').textContent = 'Could not build the brushes: ' + (e && e.message || e); $('fstatus').className = 'status err'; }
+  finally { btn.textContent = 'Save fabric brushes to Procreate'; btn.disabled = !!pending || busy; }
+};
+
 const hex = rgb => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
 function renderPalette() {
   $('palette').innerHTML = palette.map(c => `<button type="button" data-hex="${hex(c.rgb)}" aria-label="Use ${hex(c.rgb)} as test colour"><i style="background:${hex(c.rgb)}"></i><span>${hex(c.rgb).toUpperCase()}</span></button>`).join('');
@@ -1056,7 +1221,7 @@ function syncOutputs() {
 });
 $('create').onclick = createBrush; $('create2').onclick = createBrush;
 let flatRaf = 0;
-$('psize').addEventListener('input', () => { syncOutputs(); if (!flatRaf) flatRaf = requestAnimationFrame(() => { flatRaf = 0; drawFlat(); }); });
+$('psize').addEventListener('input', () => { syncOutputs(); if (!flatRaf) flatRaf = requestAnimationFrame(() => { flatRaf = 0; drawFlat(); drawFabricPad(); }); });
 $('tune').addEventListener('toggle', () => { if ($('tune').open) mirrorPad(); });
 let assetRaf = 0;
 document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', () => {
@@ -1066,7 +1231,7 @@ document.querySelectorAll('[id^=p-]').forEach(i => i.addEventListener('input', (
 $('col').addEventListener('input', updateBrushAssets);
 function setSeg(id, v) { $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v == v)); if (id === 'move') moving = +v; if (id === 'pol') polarity = v; }
 function seg(id, fn) { $(id).querySelectorAll('button').forEach(b => b.onclick = () => { $(id).querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', o === b)); fn(b.dataset.v); }); }
-seg('ftype', v => { fillType = v; if (lastData) { buildFill(lastData); renderPalette(); drawFlat(); } });
+seg('ftype', v => { fillType = v; if (lastData) { buildFill(lastData); renderPalette(); drawFlat(); buildLayers(); } });
 seg('pol', v => { polarity = v; markPending('tune'); });
 seg('move', v => { moving = +v; updateBrushAssets(); });
 seg('look', v => {
@@ -1131,8 +1296,7 @@ function bplist(root) {
   bytes.push(0, 0, 0, 0, 0, 0, offSize, refSize); be(objs.length, 8); be(0, 8); be(tableOff, 8);
   return new Uint8Array(bytes);
 }
-function brushArchive(name) {
-  const p = P();
+function brushArchive(name, p = P()) {
   const f = v => new Real(+v);
   // Same keys and types as a Brush.archive exported from Procreate (via the geologic-patterns project's template).
   // bundledShapePath / bundledGrainPath point at $null so Procreate uses the Shape.png and Grain.png in this file.
@@ -1204,31 +1368,47 @@ async function save(filename, blob) {
   return offerFile(filename, blob);
 }
 // Safari only opens the share sheet or starts a download straight after a tap. Building a file takes
-// a few seconds, which uses that tap up, so the finished file is offered with buttons for a fresh tap.
-function offerFile(filename, blob) {
+// a few seconds, which uses that tap up, so finished files are offered with buttons for a fresh tap.
+function offerFile(filename, blob) { return offerFiles([{ name: filename, blob }]); }
+function offerFiles(items) {
   return new Promise(resolve => {
-    const type = blob.type || 'application/octet-stream';
-    const file = new File([blob], filename, { type });
-    const url = URL.createObjectURL(blob);
-    const touch = navigator.maxTouchPoints > 1;
-    let canShare = false; try { canShare = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) {}
-    $('ready-name').textContent = filename;
-    $('ready-size').textContent = blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.round(blob.size / 1024) + ' KB';
+    const files = items.map(it => new File([it.blob], it.name, { type: it.blob.type || 'application/octet-stream' }));
+    const urls = items.map(it => URL.createObjectURL(it.blob));
+    const touch = navigator.maxTouchPoints > 1, many = items.length > 1, brushes = items.every(it => /\.brush$/.test(it.name));
+    let canShare = false; try { canShare = !!(navigator.canShare && navigator.canShare({ files })); } catch (e) {}
+    const total = items.reduce((a, it) => a + it.blob.size, 0);
+    const size = total > 1e6 ? (total / 1e6).toFixed(1) + ' MB' : Math.round(total / 1024) + ' KB';
+    $('ready-title').textContent = many ? `Your ${items.length} files are ready` : 'Your file is ready';
+    $('ready-name').textContent = many ? items.map(it => it.name).join(', ') : items[0].name;
+    $('ready-size').textContent = size;
     $('ready-share').hidden = !canShare;
-    $('ready-share').textContent = /\.brush$/.test(filename) ? 'Open in Procreate' : 'Share';
+    $('ready-share').textContent = brushes ? (many ? 'Open all in Procreate' : 'Open in Procreate') : 'Share';
     $('ready-hint').textContent = canShare && touch
-      ? (/\.brush$/.test(filename) ? 'Tap Open in Procreate, then choose Procreate in the share sheet. Or save it to Files and tap it there.' : 'Share it to Photos or Procreate, or save it to Files.')
-      : 'Tap Download to save the file.';
-    const dl = $('ready-dl'); dl.href = url; dl.download = filename; dl.textContent = touch ? 'Save to Files' : 'Download';
-    $('ready').hidden = false; (canShare ? $('ready-share') : dl).focus();
-    const done = ok => { $('ready').hidden = true; setTimeout(() => URL.revokeObjectURL(url), 120000); resolve(ok); };
+      ? (brushes ? 'Tap Open in Procreate, then choose Procreate in the share sheet. Or save to Files and tap each file there.' : 'Share to Photos or Procreate, or save to Files.')
+      : (many ? 'Download each file.' : 'Tap Download to save the file.');
+    const list = $('ready-list'); list.innerHTML = '';
+    items.forEach((it, k) => {
+      const a = document.createElement('a'); a.href = urls[k]; a.download = it.name;
+      a.className = many ? 'btn small' : 'btn big';
+      a.textContent = many ? (touch ? 'Save ' : 'Download ') + it.name : (touch ? 'Save to Files' : 'Download');
+      list.appendChild(a);
+    });
+    $('ready').hidden = false; (canShare ? $('ready-share') : list.firstChild).focus();
+    let saved = 0;
+    const done = ok => { $('ready').hidden = true; setTimeout(() => urls.forEach(u => URL.revokeObjectURL(u)), 120000); resolve(ok); };
     $('ready-share').onclick = async () => {
-      try { await navigator.share({ files: [file] }); done(true); }
-      catch (e) { if (e.name !== 'AbortError') $('ready-hint').textContent = 'The share sheet did not open (' + e.name + '). Use ' + dl.textContent + ' instead.'; }
+      try { await navigator.share({ files }); done(true); }
+      catch (e) { if (e.name !== 'AbortError') $('ready-hint').textContent = 'The share sheet did not open (' + e.name + '). Save the files instead.'; }
     };
-    dl.onclick = () => setTimeout(() => done(true), 400);
-    $('ready-close').onclick = () => { setStatus(''); done(false); };
+    list.querySelectorAll('a').forEach(a => a.onclick = () => { a.style.opacity = .5; if (++saved >= items.length) setTimeout(() => done(true), 400); });
+    $('ready-close').onclick = () => done(saved > 0);
   });
+}
+async function saveMany(items) {
+  if (!inArtifact) return offerFiles(items);
+  let ok = false;
+  for (const it of items) ok = (await save(it.name, it.blob)) || ok;
+  return ok;
 }
 if (inArtifact) $('exportnote').innerHTML = 'This preview saves <b>.brush.zip</b>. Rename it in Files to end in <b>.brush</b>, then tap it to open in Procreate. The full app at <b>allencrspy.github.io/grain-lift</b> saves straight to Procreate.';
 
@@ -1294,7 +1474,7 @@ sizePad();
 process(true);
 showPending(); drawFlat();
 let rt = 0;
-const relayout = () => { clearTimeout(rt); rt = setTimeout(() => { layoutView(); sizePad(); pink(); drawFlat(); }, 120); };
+const relayout = () => { clearTimeout(rt); rt = setTimeout(() => { layoutView(); sizePad(); pink(); drawFlat(); drawFabricPad(); }, 120); };
 window.addEventListener('resize', relayout);
 if (window.ResizeObserver) { let lastW = 0; new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w !== lastW) { lastW = w; relayout(); } }).observe($('stage')); }
 })();
