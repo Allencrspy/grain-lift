@@ -30,6 +30,7 @@
   --ink:#F2F0EB; --muted:#A39F97; --good:#5FC792; --warn:#E9A55A; color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{background:var(--bg)}
 body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:20px 48px;-webkit-tap-highlight-color:transparent}
 .wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
@@ -110,6 +111,16 @@ input[type=text],select{font:15px var(--sans);padding:10px 12px;border-radius:10
 .status.ok{color:var(--good)} .status.err{color:var(--warn)}
 .note{font-size:13px;color:var(--muted);margin:0}
 .note b{color:var(--ink);font-weight:600}
+
+/* file-ready panel */
+.ready{position:fixed;inset:0;z-index:50;background:rgba(10,9,8,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+@media (min-width:600px){.ready{align-items:center}}
+.ready[hidden]{display:none}
+.ready-card{background:var(--surface);border-radius:16px;padding:22px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.ready-file{margin:0;font:500 13px var(--mono);color:var(--muted);word-break:break-word}
+.ready-actions{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+a.btn.big{font-size:16px;padding:14px 22px;width:100%;min-height:52px;text-decoration:none}
+.ready-card .link{align-self:center}
 
 /* fabric kit */
 .kit{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:14px}
@@ -259,7 +270,7 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
           <div class="field"><label for="bname">Name</label><input id="bname" type="text" value="Denim Twill" maxlength="40"></div>
           <button class="primary big" id="dl-brush" type="button">Save brush to Procreate</button>
           <div class="status" id="status" role="status"></div>
-          <p class="note" id="exportnote">On iPad, the share sheet opens: choose <b>Procreate</b>. The brush appears in the <b>Imported</b> set. If Procreate isn't listed, choose <b>Save to Files</b> and tap the file.</p>
+          <p class="note" id="exportnote">When the brush is ready, tap <b>Open in Procreate</b> and choose Procreate. It appears in the <b>Imported</b> set. Or tap <b>Save to Files</b>, then tap the file in the Files app.</p>
           <div class="fine-links">
             <button id="dl-shape" type="button" class="link">Tip image</button>
             <button id="dl-grain" type="button" class="link">Texture image</button>
@@ -269,6 +280,20 @@ input[type=range]{width:100%;accent-color:var(--ink);height:26px}
       </div>
     </div>
   </section>
+
+  <div class="ready" id="ready" hidden role="dialog" aria-modal="true" aria-labelledby="ready-title">
+    <div class="ready-card">
+      <span class="step">Ready</span>
+      <h2 id="ready-title">Your file is ready</h2>
+      <p class="ready-file"><span id="ready-name"></span> · <span id="ready-size"></span></p>
+      <p class="hint" id="ready-hint" style="margin:0"></p>
+      <div class="ready-actions">
+        <button class="primary big" id="ready-share" type="button">Open in Procreate</button>
+        <a class="btn big" id="ready-dl" href="#">Save to Files</a>
+      </div>
+      <button class="link" id="ready-close" type="button">Close</button>
+    </div>
+  </div>
 
   <details class="tune" id="tune">
     <summary><h2>Fine-tune</h2><span class="hint">Everything is set from your photo. Adjust only if you want to.</span></summary>
@@ -1176,30 +1201,55 @@ async function save(filename, blob) {
     try { await downloads.save({ filename, data: blob }); return true; }
     catch (e) { if (e && e.code === 'declined') setStatus('Save cancelled.'); else setStatus('Could not save: ' + (e && e.message || 'unknown error'), 'err'); return false; }
   }
-  // On iPad and iPhone, hand the file to the share sheet so it can go straight to Procreate.
-  const file = new File([blob], filename, { type: 'application/octet-stream' });
-  if (navigator.maxTouchPoints > 1 && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file] }); return true; }
-    catch (e) { if (e.name === 'AbortError') { setStatus('Share cancelled.'); return false; } /* otherwise fall back to a download */ }
-  }
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  return true;
+  return offerFile(filename, blob);
+}
+// Safari only opens the share sheet or starts a download straight after a tap. Building a file takes
+// a few seconds, which uses that tap up, so the finished file is offered with buttons for a fresh tap.
+function offerFile(filename, blob) {
+  return new Promise(resolve => {
+    const type = blob.type || 'application/octet-stream';
+    const file = new File([blob], filename, { type });
+    const url = URL.createObjectURL(blob);
+    const touch = navigator.maxTouchPoints > 1;
+    let canShare = false; try { canShare = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) {}
+    $('ready-name').textContent = filename;
+    $('ready-size').textContent = blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.round(blob.size / 1024) + ' KB';
+    $('ready-share').hidden = !canShare;
+    $('ready-share').textContent = /\.brush$/.test(filename) ? 'Open in Procreate' : 'Share';
+    $('ready-hint').textContent = canShare && touch
+      ? (/\.brush$/.test(filename) ? 'Tap Open in Procreate, then choose Procreate in the share sheet. Or save it to Files and tap it there.' : 'Share it to Photos or Procreate, or save it to Files.')
+      : 'Tap Download to save the file.';
+    const dl = $('ready-dl'); dl.href = url; dl.download = filename; dl.textContent = touch ? 'Save to Files' : 'Download';
+    $('ready').hidden = false; (canShare ? $('ready-share') : dl).focus();
+    const done = ok => { $('ready').hidden = true; setTimeout(() => URL.revokeObjectURL(url), 120000); resolve(ok); };
+    $('ready-share').onclick = async () => {
+      try { await navigator.share({ files: [file] }); done(true); }
+      catch (e) { if (e.name !== 'AbortError') $('ready-hint').textContent = 'The share sheet did not open (' + e.name + '). Use ' + dl.textContent + ' instead.'; }
+    };
+    dl.onclick = () => setTimeout(() => done(true), 400);
+    $('ready-close').onclick = () => { setStatus(''); done(false); };
+  });
 }
 if (inArtifact) $('exportnote').innerHTML = 'This preview saves <b>.brush.zip</b>. Rename it in Files to end in <b>.brush</b>, then tap it to open in Procreate. The full app at <b>allencrspy.github.io/grain-lift</b> saves straight to Procreate.';
 
 $('dl-brush').onclick = async () => {
   if (!shapeArr) return;
   if (!window.JSZip) { setStatus('The zip library did not load. Check your connection and reload.', 'err'); return; }
-  setStatus('Building brush…');
-  const name = safeName(), zip = new JSZip();
-  zip.file('Brush.archive', brushArchive(name));
-  zip.file('Shape.png', await exportPng(shapeCanvas, EXPORT));
-  zip.file('Grain.png', await exportPng(grainCanvas, EXPORT));
-  zip.file('QuickLook/Thumbnail.png', await thumbnail());
-  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-  const fname = name + (inArtifact ? '.brush.zip' : '.brush');
-  if (await save(fname, blob)) { setStatus(`Saved ${fname}.`, 'ok'); stepTo(5); }
+  const btn = $('dl-brush'); btn.disabled = true; btn.textContent = 'Building brush…'; setStatus('');
+  try {
+    const name = safeName(), zip = new JSZip();
+    zip.file('Brush.archive', brushArchive(name));
+    // PNGs are already compressed; storing them skips slow work on iPad
+    zip.file('Shape.png', await exportPng(shapeCanvas, EXPORT), { compression: 'STORE' });
+    zip.file('Grain.png', await exportPng(grainCanvas, EXPORT), { compression: 'STORE' });
+    zip.file('QuickLook/Thumbnail.png', await thumbnail(), { compression: 'STORE' });
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/octet-stream' });
+    const fname = name + (inArtifact ? '.brush.zip' : '.brush');
+    btn.disabled = false; btn.textContent = 'Save brush to Procreate';
+    if (await save(fname, blob)) { setStatus(`Saved ${fname}.`, 'ok'); stepTo(5); }
+  } catch (e) {
+    setStatus('Could not build the brush: ' + (e && e.message || e), 'err');
+  } finally { btn.disabled = !!pending || busy; btn.textContent = 'Save brush to Procreate'; }
 };
 $('dl-fill').onclick = async () => {
   if (!palette.length) return;
